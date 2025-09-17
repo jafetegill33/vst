@@ -47,6 +47,8 @@ body {
 .jarl-info {
     color: #f0f0f0;
     font-size: 0.9rem;
+    margin-left: 10px;
+    opacity: 0.9;
 }
 
 .title {

@@ -99,6 +99,7 @@ class MobileVikingSettlementTycoon {
         this.saveKey = 'vikingSettlementMobile';
         this.backupKey = 'vikingSettlementMobile_backup';
         this.schemaVersion = 2;
+        this.kingName = null;
     }
     
     initSplashScreen() {
@@ -264,6 +265,7 @@ class MobileVikingSettlementTycoon {
         this.setupCanvas();
         this.setupMobileUI();
         this.loadNearbyChunks();
+        this.ensureKingName();
         
         // Preload sprites early so drawImage succeeds without network
         this.preloadSprites();
@@ -526,6 +528,9 @@ class MobileVikingSettlementTycoon {
         
         // Prevent context menu on long press
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        const photoBtn = document.getElementById('mobilePhotoBtn');
+        if (photoBtn) photoBtn.addEventListener('click', () => this.takeMobilePhoto());
     }
     
     switchTab(tabName) {
@@ -970,7 +975,8 @@ class MobileVikingSettlementTycoon {
                 fogOfWarData: fogOfWarData,
                 gameTime: this.gameTime || 0,
                 deviceInfo: this.deviceInfo,
-                saveTime: Date.now()
+                saveTime: Date.now(),
+                kingName: this.kingName
             };
             
             // Test if the data can be stringified before saving
@@ -997,7 +1003,8 @@ class MobileVikingSettlementTycoon {
                     buildings: this.buildings.map(b => ({ type: b.type, x: b.x, y: b.y, level: b.level || 1, lastUpdate: b.lastUpdate || Date.now() })),
                     camera: { x: this.camera.x, y: this.camera.y, scale: Math.max(0.3, Math.min(3, this.camera.scale)) },
                     scouts: this.scouts.map(s => ({ x: s.x, y: s.y, speed: s.speed, health: s.health || 100, range: s.range || 40, exploring: false, target: null })),
-                    seed: this.seed, exploredAreas: Array.from(this.exploredAreas), gameTime: this.gameTime || 0, deviceInfo: this.deviceInfo, saveTime: Date.now()
+                    seed: this.seed, exploredAreas: Array.from(this.exploredAreas), gameTime: this.gameTime || 0, deviceInfo: this.deviceInfo, saveTime: Date.now(),
+                    kingName: this.kingName
                 };
                 const fsStr = JSON.stringify(fallbackState);
                 const payload = { schema: this.schemaVersion, checksum: this.computeChecksum(fsStr), data: fallbackState };
@@ -1191,6 +1198,10 @@ class MobileVikingSettlementTycoon {
                 // Fallback to basic restoration
                 this.restoreFogOfWar();
             }
+            
+            // Restore king name
+            if (gameState.kingName) this.kingName = gameState.kingName;
+            if (!this.kingName) this.ensureKingName();
             
             // Update displays
             this.updateMobileResourceDisplay();
@@ -3159,6 +3170,67 @@ class MobileVikingSettlementTycoon {
         
         this.lastUpdate = now;
         requestAnimationFrame(() => this.gameLoop());
+    }
+    
+    ensureKingName() {
+        const key = 'vikingKingName';
+        let name = localStorage.getItem(key);
+        if (!name) {
+            name = (prompt('Hail, Jarl! Bestow thy name:', '') || '').trim();
+            if (!name) name = 'Unnamed';
+            localStorage.setItem(key, name);
+        }
+        this.kingName = name;
+    }
+    
+    takeMobilePhoto() {
+        try {
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = this.canvas.width;
+            exportCanvas.height = this.canvas.height;
+            const ex = exportCanvas.getContext('2d');
+            ex.drawImage(this.canvas, 0, 0);
+
+            const pad = 12;
+            const text = `Jarl ${this.kingName} • ${new Date().toLocaleString()}`;
+            ex.save();
+            ex.font = '16px Space Mono';
+            ex.textAlign = 'right';
+            ex.textBaseline = 'bottom';
+            const metrics = ex.measureText(text);
+            const boxW = metrics.width + 14;
+            const boxH = 26;
+            ex.fillStyle = 'rgba(0,0,0,0.5)';
+            ex.fillRect(exportCanvas.width - boxW - pad, exportCanvas.height - boxH - pad, boxW, boxH);
+            ex.fillStyle = '#ffffff';
+            ex.fillText(text, exportCanvas.width - pad - 7, exportCanvas.height - pad - 6);
+            ex.restore();
+
+            exportCanvas.toBlob(async (blob) => {
+                if (!blob) return;
+                try {
+                    if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'viking.png', { type: 'image/png' })] })) {
+                        const file = new File([blob], 'viking_photo.png', { type: 'image/png' });
+                        await navigator.share({ files: [file], title: 'Viking Settlement Tycoon', text: `Jarl ${this.kingName}` });
+                        this.showMobileNotification('Photo shared!', 'success');
+                        return;
+                    }
+                } catch {}
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const safeName = (this.kingName || 'Jarl').replace(/[^a-z0-9_-]+/gi, '_');
+                a.download = `VikingTycoon_${safeName}_${Date.now()}.png`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                this.showMobileNotification('Photo saved!', 'success');
+            }, 'image/png');
+        } catch (e) {
+            console.error('Photo export failed', e);
+            this.showMobileNotification('Failed to save photo', 'error');
+        }
     }
 }
 

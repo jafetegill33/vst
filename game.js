@@ -68,6 +68,7 @@ class VikingSettlementTycoon {
         /* cache for building sprites to avoid fallback when offline */
         this.spriteCache = {};
         
+        this.kingName = null;
         this.init();
     }
     
@@ -92,6 +93,9 @@ class VikingSettlementTycoon {
         this.setupEventListeners();
         this.setupUI();
         this.gameLoop();
+        
+        this.ensureKingName();
+        document.getElementById('kingNameDisplay').textContent = `Jarl: ${this.kingName}`;
     }
     
     initializeSoundSystem() {
@@ -1855,6 +1859,9 @@ class VikingSettlementTycoon {
         document.getElementById('saveGameBtn').addEventListener('click', () => {
             this.saveGame();
         });
+        
+        const photoBtn = document.getElementById('photoBtn');
+        if (photoBtn) photoBtn.addEventListener('click', () => this.takePhoto());
     }
     
     setupUI() {
@@ -2791,7 +2798,8 @@ class VikingSettlementTycoon {
                 seed: this.seed,
                 exploredAreas: Array.from(this.exploredAreas),
                 fogOfWarData: fogOfWarData,
-                saveTime: Date.now()
+                saveTime: Date.now(),
+                kingName: this.kingName
             };
             
             localStorage.setItem('vikingSettlement', JSON.stringify(gameState));
@@ -3018,6 +3026,64 @@ class VikingSettlementTycoon {
         }
     }
     
+    ensureKingName() {
+        const key = 'vikingKingName';
+        let name = localStorage.getItem(key);
+        if (!name) {
+            name = (prompt('Hail, Jarl! Bestow thy name:', '') || '').trim();
+            if (!name) name = 'Unnamed';
+            localStorage.setItem(key, name);
+        }
+        this.kingName = name;
+    }
+    
+    takePhoto() {
+        try {
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = this.canvas.width;
+            exportCanvas.height = this.canvas.height;
+            const ex = exportCanvas.getContext('2d');
+
+            // Draw current game canvas
+            ex.drawImage(this.canvas, 0, 0);
+
+            // Watermark
+            const pad = 16;
+            const text = `Jarl ${this.kingName} • ${new Date().toLocaleString()}`;
+            ex.save();
+            ex.font = '18px Space Mono';
+            ex.textAlign = 'right';
+            ex.textBaseline = 'bottom';
+            // background box
+            const metrics = ex.measureText(text);
+            const boxW = metrics.width + 16;
+            const boxH = 28;
+            ex.fillStyle = 'rgba(0,0,0,0.5)';
+            ex.fillRect(exportCanvas.width - boxW - pad, exportCanvas.height - boxH - pad, boxW, boxH);
+            // text
+            ex.fillStyle = '#ffffff';
+            ex.fillText(text, exportCanvas.width - pad - 8, exportCanvas.height - pad - 6);
+            ex.restore();
+
+            exportCanvas.toBlob((blob) => {
+                if (!blob) return;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const safeName = (this.kingName || 'Jarl').replace(/[^a-z0-9_-]+/gi, '_');
+                a.download = `VikingTycoon_${safeName}_${Date.now()}.png`;
+                a.href = url;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                this.showNotification('Photo saved!', 'success');
+            }, 'image/png');
+        } catch (e) {
+            console.error('Photo export failed', e);
+            this.showNotification('Failed to save photo', 'error');
+        }
+    }
+    
     gameLoop() {
         const now = performance.now();
         const deltaTime = now - this.lastUpdate;
@@ -3035,6 +3101,7 @@ class VikingSettlementTycoon {
 // Start the game when page loads
 window.addEventListener('load', () => {
     const game = new VikingSettlementTycoon();
+    window.vikingGame = game;
     
     // Try to load saved game immediately after initialization
     setTimeout(() => {
